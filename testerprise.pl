@@ -6,7 +6,8 @@ use strict;
 use warnings;
 
 
-my $enterprise_dir = "/etc/wireless.d/";
+# my $enterprise_dir = "/etc/wireless.d/";
+my $enterprise_dir = ".";
 my $interface = "iwn0";
 
 sub get_enterprise_bssid;
@@ -19,13 +20,15 @@ print get_enterprise_bssid($interface, $nwid);
 
 
 sub make_enterprise_config {
+	my ($config_dir, $nwid) = @_;
 
+	system("mkdir -p $enterprise_dir");
+
+	
 }
 
 sub enterprise_connect {
 	my ($interface, $nwid) = @_;
-
-	system("mkdir -p $enterprise_dir");
 }
 
 sub get_enterprise_bssid {
@@ -38,8 +41,8 @@ sub get_enterprise_bssid {
 	# print $scan_output;
 
 	foreach my $line (split /[\r\n]+/, $scan_output) {
-		# if the line has "bssid", the nwid, and isn't in the inteface info
-		if ($line =~ /$nwid.*bssid/ and $line !~ /ieee80211/) {
+		# if the line is correct, and isn't in the inteface info
+		if ($line =~ /$nwid.*bssid.*802\.x/ and $line !~ /ieee80211/) {
 			# find the bssid on the line
 			foreach my $part (split /\s/, $line) {
 				if($part =~ /([0-9a-f]{2}([:-]|$)){6}/) {

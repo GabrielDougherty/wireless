@@ -25,9 +25,12 @@ use strict;
 use warnings;
 
 my $config_file = "/etc/wireless.cfg";
+my $enterprise_config_dir = ".";
 sub configure_wlan;
 sub dhclient;
 sub ifdown;
+sub wpa_enterprise_connect;
+sub get_enterprise_bssid;
 
 die("You need root privileges to run $0\n") unless $> eq 0;
 die("Could not open $config_file\n") unless -e -r $config_file;
@@ -38,7 +41,7 @@ system('clear');
 my %configuration;
 my $current_config;
 my $current_wlan;
-my @allowed_config_keys = ("interface","wired_interface","wireless_interface","nwid","wpakey","name","type");
+my @allowed_config_keys = ("interface","wired_interface","wireless_interface","nwid","wpakey","name","type","ssid","key_mgmt","eap","identity","password");
 
 open FILE,"<",$config_file or die("Could not open $config_file\n");
 
@@ -109,8 +112,11 @@ if(@ARGV){
 		} elsif ($connect{'type'} eq 'airplane') {
 			ifdown($wired_interface);
 			ifdown($wireless_interface);
+		} elsif($connect{'type'} eq 'enterprise'){
+			wpa_enterprise_connect($interface, $nwid);
 		} else {
 			ifdown($wired_interface) if $wired_interface;
+			make_enterprise_config($connect) if $connect{'type'} eq 'enterprise';
 			configure_wlan($wireless_interface,$connect{'nwid'},$connect{'wpakey'},$connect{'type'});
 			dhclient($wireless_interface);
 		}
@@ -141,4 +147,63 @@ sub ifdown {
 	my $interface = shift;
 	print "Bringing $interface down\n";
 	system("ifconfig $interface down");
+}
+
+sub wpa_enterprise_connect {
+	my ($interface, $nwid) = @_;
+
+	my $bssid = get_enterprise_bssid($interface, $nwid);
+	system("ifconfig $interface $nwid bssid $bssid wpa wpaakms 802.1x up");
+}
+
+sub make_enterprise_config {
+	my (%connect) = @_;
+
+	my $ent_config = "$enterprise_config_dir/$connect{'nwid'}";
+
+	# assume this program already made the config
+	# so, don't make it again
+	if -e $ent_config {
+		return;
+	}
+	
+	open FILE,"<", or die("Could not open $ent_config\n");
+
+	print "ctrl_interface=/var/run/wpa_supplicant\n";
+	print "ctrl_interface_group=wheel\n";
+	print "ap_scan=0\n";
+	
+	print "network={\n";
+	while (my($key, $value) = each %connect) {
+		if $key eq "enterprise" {
+			next;
+		}
+		print "\t";
+		print "$key=$value\n";
+	}
+	print "}\n";
+}
+
+sub get_enterprise_bssid {
+	my ($interface, $nwid) = @_;
+
+	# clear ifconfig flags
+	system("ifconfig iwn0 -nwid -bssid -wpa -wpakey -nwkey");
+
+	my $scan_output = `/sbin/ifconfig $interface scan`;
+	# print $scan_output;
+
+	foreach my $line (split /[\r\n]+/, $scan_output) {
+		# if the line is correct, and isn't in the inteface info
+		if ($line =~ /$nwid.*bssid.*802\.x/ and $line !~ /ieee80211/) {
+			# find the bssid on the line
+			foreach my $part (split /\s/, $line) {
+				if($part =~ /([0-9a-f]{2}([:-]|$)){6}/) {
+					return $part;
+				}
+			}
+		}
+	}
+
+	die "Unable to find BSSID for network: $nwid";
 }
